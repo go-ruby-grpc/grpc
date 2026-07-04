@@ -142,9 +142,9 @@ func (s *ClientStub) ClientStreamer(method string, requests []any, opts CallOpti
 			return nil, err
 		}
 	}
-	if err := st.CloseSend(); err != nil {
-		return nil, badStatusFromError(err)
-	}
+	// Best-effort half-close; a genuine transport failure surfaces on the
+	// subsequent Read/drain as a *BadStatus.
+	_ = st.CloseSend()
 	return call.Read()
 }
 
@@ -162,9 +162,9 @@ func (s *ClientStub) ServerStreamer(method string, req any, opts CallOptions) ([
 	if err := call.Send(req); err != nil {
 		return nil, err
 	}
-	if err := st.CloseSend(); err != nil {
-		return nil, badStatusFromError(err)
-	}
+	// Best-effort half-close; a genuine transport failure surfaces on the
+	// subsequent Read/drain as a *BadStatus.
+	_ = st.CloseSend()
 	return drain(call)
 }
 
@@ -185,9 +185,9 @@ func (s *ClientStub) BidiStreamer(method string, requests []any, opts CallOption
 			return nil, err
 		}
 	}
-	if err := st.CloseSend(); err != nil {
-		return nil, badStatusFromError(err)
-	}
+	// Best-effort half-close; a genuine transport failure surfaces on the
+	// subsequent Read/drain as a *BadStatus.
+	_ = st.CloseSend()
 	return drain(call)
 }
 

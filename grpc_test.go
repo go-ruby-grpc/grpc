@@ -50,6 +50,9 @@ func echoService() Service {
 				ClientStreamHandler: func(call *ActiveCall) (any, error) {
 					var parts []string
 					err := call.EachRemoteRead(func(msg any) error {
+						if msg.(string) == "err" {
+							return NewBadStatus(Internal, "client-stream boom", nil)
+						}
 						parts = append(parts, msg.(string))
 						return nil
 					})
@@ -64,6 +67,9 @@ func echoService() Service {
 				RequestUnmarshal: strUnmarshal, ResponseMarshal: strMarshal,
 				ServerStreamHandler: func(req any, call *ActiveCall) error {
 					for _, w := range strings.Fields(req.(string)) {
+						if w == "err" {
+							return NewBadStatus(Internal, "server-stream boom", nil)
+						}
 						if err := call.Send("<" + w + ">"); err != nil {
 							return err
 						}
@@ -76,6 +82,9 @@ func echoService() Service {
 				RequestUnmarshal: strUnmarshal, ResponseMarshal: strMarshal,
 				BidiStreamHandler: func(call *ActiveCall) error {
 					return call.EachRemoteRead(func(msg any) error {
+						if msg.(string) == "err" {
+							return NewBadStatus(Internal, "bidi boom", nil)
+						}
 						return call.Send("re:" + msg.(string))
 					})
 				},

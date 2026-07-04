@@ -96,6 +96,9 @@ func (s *RpcServer) Run() error {
 			for _, l := range listeners {
 				_ = l.Close()
 			}
+			s.mu.Lock()
+			s.running = false
+			s.mu.Unlock()
 			return err
 		}
 		listeners = append(listeners, lis)
