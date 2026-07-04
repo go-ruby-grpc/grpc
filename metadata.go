@@ -21,15 +21,6 @@ import (
 // gem's observed behaviour.
 type Metadata map[string]string
 
-// clone returns an independent copy so callers never share the caller's map.
-func (m Metadata) clone() Metadata {
-	out := make(Metadata, len(m))
-	for k, v := range m {
-		out[k] = v
-	}
-	return out
-}
-
 // Keys returns the metadata keys in sorted order — handy for deterministic
 // iteration and tests.
 func (m Metadata) Keys() []string {

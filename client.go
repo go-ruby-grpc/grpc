@@ -54,7 +54,10 @@ func NewClientStub(host, creds string, opts ...StubOption) (*ClientStub, error) 
 	if cfg.transport == nil {
 		cfg.transport = NetTransport{}
 	}
-	cc, err := grpc.NewClient(host,
+	// The "passthrough" scheme hands host straight to the injected dialer
+	// instead of running it through the DNS resolver, which is what makes a
+	// non-resolvable in-memory address (or any transport-defined name) work.
+	cc, err := grpc.NewClient("passthrough:///"+host,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithContextDialer(cfg.transport.Dial),
 	)

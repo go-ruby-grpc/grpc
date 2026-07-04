@@ -5,6 +5,7 @@
 package grpc
 
 import (
+	"net"
 	"sync"
 
 	"google.golang.org/grpc"
@@ -21,8 +22,8 @@ type RpcServer struct {
 	mu       sync.Mutex
 	addrs    []string
 	running  bool
-	stopped  bool
-	serveErr chan error
+	stopOnce sync.Once
+	stopCh   chan struct{}
 }
 
 // ServerOption configures an RpcServer at construction.
@@ -37,7 +38,7 @@ func WithTransport(t Transport) ServerOption {
 // NewRpcServer builds an RpcServer, mirroring GRPC::RpcServer.new. Register
 // services with Handle, bind ports with AddHTTP2Port, then Run.
 func NewRpcServer(opts ...ServerOption) *RpcServer {
-	s := &RpcServer{serveErr: make(chan error, 1)}
+	s := &RpcServer{stopCh: make(chan struct{})}
 	for _, o := range opts {
 		o(s)
 	}
@@ -52,10 +53,10 @@ func NewRpcServer(opts ...ServerOption) *RpcServer {
 }
 
 // AddHTTP2Port mirrors GRPC::RpcServer#add_http2_port(addr, creds). The
-// credentials argument is accepted for surface fidelity — pass ":this_port_is_
-// insecure" for a plaintext port, as the gem does. TLS credentials are a
-// follow-up; the address is remembered and bound when the server runs. It
-// returns the bound address.
+// credentials argument is accepted for surface fidelity — pass
+// ":this_port_is_insecure" for a plaintext port, as the gem does. TLS
+// credentials are a follow-up; the address is remembered and bound when the
+// server runs. It returns the bound address.
 func (s *RpcServer) AddHTTP2Port(addr, creds string) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -70,9 +71,10 @@ func (s *RpcServer) Handle(svc Service) {
 	s.server.RegisterService(&desc, nil)
 }
 
-// Run mirrors GRPC::RpcServer#run: it binds every added port and serves. It
-// blocks until the server is stopped, returning the first serve error (nil on a
-// clean Stop). At least one port must have been added.
+// Run mirrors GRPC::RpcServer#run: it binds every added port and serves,
+// blocking until Stop is called. A bind failure is returned immediately; a
+// clean Stop returns nil. At least one port must have been added, and Run may
+// not be entered twice.
 func (s *RpcServer) Run() error {
 	s.mu.Lock()
 	if s.running {
@@ -87,7 +89,7 @@ func (s *RpcServer) Run() error {
 	addrs := append([]string(nil), s.addrs...)
 	s.mu.Unlock()
 
-	listeners := make([]interface{ Close() error }, 0, len(addrs))
+	var listeners []net.Listener
 	for _, addr := range addrs {
 		lis, err := s.transport.Listen(addr)
 		if err != nil {
@@ -97,18 +99,11 @@ func (s *RpcServer) Run() error {
 			return err
 		}
 		listeners = append(listeners, lis)
-		go func() {
-			if err := s.server.Serve(lis); err != nil {
-				select {
-				case s.serveErr <- err:
-				default:
-				}
-			}
-		}()
+		go func(l net.Listener) { _ = s.server.Serve(l) }(lis)
 	}
-	// Block until Stop closes the server, then report any serve error.
-	err := <-s.serveErr
-	return err
+	// Block until Stop is called; Serve returns on GracefulStop.
+	<-s.stopCh
+	return nil
 }
 
 // RunTillTerminated mirrors GRPC::RpcServer#run_till_terminated: it runs the
@@ -120,26 +115,27 @@ func (s *RpcServer) RunTillTerminated() error {
 }
 
 // Stop mirrors GRPC::RpcServer#stop: it gracefully drains and shuts the server
-// down, unblocking Run. It is safe to call once; subsequent calls are no-ops.
+// down, unblocking Run. It is safe to call repeatedly; only the first call has
+// an effect.
 func (s *RpcServer) Stop() {
-	s.mu.Lock()
-	if s.stopped {
-		s.mu.Unlock()
-		return
-	}
-	s.stopped = true
-	s.mu.Unlock()
-
-	s.server.GracefulStop()
-	select {
-	case s.serveErr <- nil:
-	default:
-	}
+	s.stopOnce.Do(func() {
+		s.server.GracefulStop()
+		close(s.stopCh)
+	})
 }
 
 // Running reports whether Run has been entered and Stop not yet called.
 func (s *RpcServer) Running() bool {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.running && !s.stopped
+	running := s.running
+	s.mu.Unlock()
+	if !running {
+		return false
+	}
+	select {
+	case <-s.stopCh:
+		return false
+	default:
+		return true
+	}
 }

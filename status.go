@@ -121,11 +121,7 @@ func badStatusFromError(err error) *BadStatus {
 	if !ok {
 		return NewBadStatus(Unknown, err.Error(), Metadata{})
 	}
-	md := Metadata{}
-	if d := st.Proto(); d != nil {
-		_ = d
-	}
-	return NewBadStatus(StatusCode(st.Code()), st.Message(), md)
+	return NewBadStatus(StatusCode(st.Code()), st.Message(), Metadata{})
 }
 
 // toGRPCError maps a handler's error to a google.golang.org/grpc status error so

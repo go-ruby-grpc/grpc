@@ -61,11 +61,6 @@ type Service struct {
 	Methods []Method
 }
 
-// fullMethod returns the "/service/method" path for an RPC.
-func fullMethod(service, method string) string {
-	return "/" + service + "/" + method
-}
-
 // toGRPCServiceDesc converts a Service into a google.golang.org/grpc ServiceDesc
 // so the real gRPC runtime can dispatch to it. Unary methods become MethodDescs;
 // streaming methods become StreamDescs.
