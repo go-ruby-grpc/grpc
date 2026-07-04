@@ -36,8 +36,10 @@ jobs:
       - name: Test + 100% coverage gate
         shell: bash
         run: |
+          # -race requires cgo; the CGO=0 guarantee is enforced by the build
+          # step above and by the arch lanes (which run the suite with CGO=0).
           COVERPKG=$(go list ./... | paste -sd, -)
-          CGO_ENABLED=0 go test -race -coverpkg="$COVERPKG" -coverprofile=cover.out ./...
+          go test -race -coverpkg="$COVERPKG" -coverprofile=cover.out ./...
           go tool cover -func=cover.out | tail -n 25
           cov=$(go tool cover -func=cover.out | tail -1 | awk '{print $3}' | tr -d '%')
           echo "coverage: ${cov}%"
