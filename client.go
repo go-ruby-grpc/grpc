@@ -6,6 +6,7 @@ package grpc
 
 import (
 	"context"
+	"errors"
 	"io"
 	"time"
 
@@ -137,10 +138,8 @@ func (s *ClientStub) ClientStreamer(method string, requests []any, opts CallOpti
 		return nil, err
 	}
 	call := newActiveCall(st, opts.Marshal, opts.Unmarshal, nil)
-	for _, req := range requests {
-		if err := call.Send(req); err != nil {
-			return nil, err
-		}
+	if err := sendAll(call, requests); err != nil {
+		return nil, err
 	}
 	// Best-effort half-close; a genuine transport failure surfaces on the
 	// subsequent Read/drain as a *BadStatus.
@@ -159,7 +158,7 @@ func (s *ClientStub) ServerStreamer(method string, req any, opts CallOptions) ([
 		return nil, err
 	}
 	call := newActiveCall(st, opts.Marshal, opts.Unmarshal, nil)
-	if err := call.Send(req); err != nil {
+	if err := sendAll(call, []any{req}); err != nil {
 		return nil, err
 	}
 	// Best-effort half-close; a genuine transport failure surfaces on the
@@ -180,15 +179,35 @@ func (s *ClientStub) BidiStreamer(method string, requests []any, opts CallOption
 		return nil, err
 	}
 	call := newActiveCall(st, opts.Marshal, opts.Unmarshal, nil)
-	for _, req := range requests {
-		if err := call.Send(req); err != nil {
-			return nil, err
-		}
+	if err := sendAll(call, requests); err != nil {
+		return nil, err
 	}
 	// Best-effort half-close; a genuine transport failure surfaces on the
 	// subsequent Read/drain as a *BadStatus.
 	_ = st.CloseSend()
 	return drain(call)
+}
+
+// sendAll streams every request over the call. If a Send fails because the
+// stream itself broke — e.g. the server rejected the call as UNIMPLEMENTED and
+// half-closed it, so SendMsg fails with a transport error surfaced as a
+// *BadStatus — it stops sending without error, letting the caller's subsequent
+// CloseSend + Read/drain report the true RPC status (which carries the real
+// code, e.g. UNIMPLEMENTED) rather than the coarse UNKNOWN a returned Send error
+// would map to. A client-side marshal failure is a genuine error the caller can
+// do nothing about, so it is returned as-is.
+func sendAll(call *ActiveCall, requests []any) error {
+	for _, req := range requests {
+		if err := call.Send(req); err != nil {
+			var bs *BadStatus
+			if errors.As(err, &bs) {
+				// Stream broken; the real status comes from the drain.
+				return nil
+			}
+			return err
+		}
+	}
+	return nil
 }
 
 // drain reads an ActiveCall to EOF, collecting every response message.
