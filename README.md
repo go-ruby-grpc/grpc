@@ -125,6 +125,64 @@ func main() {
 helpers; a streaming handler uses `ActiveCall.Read` / `EachRemoteRead` to consume
 requests and `ActiveCall.Send` to emit responses.
 
+## Generated services & codegen
+
+Real gem usage rarely builds a `Service` by hand: a `.proto`'s `service` block is
+compiled by `grpc_tools_ruby_protoc` into a `*_services_pb.rb` that declares a
+`GRPC::GenericService` base class and its `Stub`. This package ports both halves.
+
+- **`GRPC::GenericService`** → `GenericService` — `NewGenericService(name)` then
+  `RPC(...)` per rpc (the gem's `rpc :Name, In, Out` macro). `BuildService` pairs
+  the declarations with handlers to yield a `Service` to `Handle`; `StubClass`
+  derives the client stub (the gem's `rpc_stub_class`). The generated stub
+  carries each rpc's marshal/unmarshal, so a caller supplies only the request:
+
+  ```go
+  gs := grpc.NewGenericService("helloworld.Greeter").
+      RPC(grpc.RpcDesc{Name: "SayHello", Type: grpc.Unary,
+          RequestMarshal: enc, RequestUnmarshal: dec,
+          ResponseMarshal: enc, ResponseUnmarshal: dec})
+
+  svc, _ := gs.BuildService(grpc.Handlers{
+      "SayHello": func(req any, call *grpc.ActiveCall) (any, error) {
+          return "Hello " + req.(string), nil
+      }})
+  srv.Handle(svc)
+
+  stub := gs.StubClass(clientStub)
+  resp, _ := stub.RequestResponse("SayHello", "world", grpc.CallOptions{})
+  ```
+
+- **`grpc_tools_ruby_protoc`** → `GenerateRubyServices` — given a `.proto`'s
+  service block (`ServiceFile` / `ServiceGen` / `MethodGen`), it emits the exact
+  `*_services_pb.rb` source, **byte-for-byte** as the gem's generator. All four
+  cardinalities (`stream(...)` on the request and/or response), multiple services
+  per file, dotted and underscored packages, nested and cross-package message
+  types, and package-less files are reproduced. The generated Ruby loads
+  unchanged and binds this runtime through go-embedded-ruby.
+
+  ```go
+  src, _ := grpc.GenerateRubyServices(grpc.ServiceFile{
+      ProtoFile: "helloworld.proto", Package: "helloworld",
+      Services: []grpc.ServiceGen{{Name: "Greeter", Methods: []grpc.MethodGen{
+          {Name: "SayHello", InputType: "helloworld.HelloRequest",
+              OutputType: "helloworld.HelloReply"}}}},
+  })
+  ```
+
+The generator is checked against the real `grpc_tools_ruby_protoc` (the
+`grpc-tools` gem) as a **differential oracle**: for each `.proto`, our output must
+equal the binary's to the byte; the test skips only when the gem is not
+installed, and inline goldens still pin the format in that case.
+
+**Residual (named, not silent):** message-`.proto` parsing and message codegen
+stay in [go-ruby-protobuf](https://github.com/go-ruby-protobuf/protobuf) (which
+also builds descriptors at runtime rather than parsing `.proto` text); a Ruby
+constant for a message imported from another package with a *nested* type is
+approximated (the common same-package and flat cross-package cases are
+byte-exact); and TLS/`ChannelCredentials`, xDS, channelz and health/reflection
+services remain follow-ups.
+
 ## Status codes & errors
 
 ```go
@@ -156,6 +214,10 @@ to `UNKNOWN`, exactly as the gem surfaces a bare exception.
 | `GRPC::Core::CallError`               | `*CallError`                              |
 | metadata (a Hash)                     | `Metadata` (`map[string]string`)         |
 | generated marshal/unmarshal procs     | `Marshaler` / `Unmarshaler` per call      |
+| `GRPC::GenericService`                | `*GenericService`                         |
+| `rpc :Name, In, Out`                  | `(*GenericService).RPC`                    |
+| `Service.rpc_stub_class`              | `(*GenericService).StubClass` → `*GenericStub` |
+| `grpc_tools_ruby_protoc`              | `GenerateRubyServices`                     |
 
 ## Tests & coverage
 

@@ -43,6 +43,22 @@
 //	GRPC::BadStatus                       *BadStatus
 //	GRPC::Core::CallError                 *CallError
 //	metadata (a Hash)                     Metadata (map[string]string)
+//	GRPC::GenericService                  *GenericService
+//	  rpc :Name, In, Out                    (*GenericService).RPC
+//	  service.rpc_stub_class                (*GenericService).StubClass → *GenericStub
+//	grpc_tools_ruby_protoc                GenerateRubyServices
+//
+// # Generated services
+//
+// The generated-service layer mirrors what grpc_tools_ruby_protoc emits: a
+// [GenericService] is the GRPC::GenericService a generated *_services_pb.rb
+// Service base class includes — it names the service and collects the rpc
+// declarations, then derives the server-side [Service] to register
+// ([GenericService.BuildService]) and the client-side stub
+// ([GenericService.StubClass], the gem's rpc_stub_class). [GenerateRubyServices]
+// is the code generator itself: given a .proto's service block it emits the exact
+// *_services_pb.rb source, byte-faithful to grpc_tools_ruby_protoc (asserted
+// against the real binary as the oracle).
 //
 // # Messages
 //
