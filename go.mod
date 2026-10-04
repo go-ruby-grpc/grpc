@@ -1,6 +1,6 @@
 module github.com/go-ruby-grpc/grpc
 
-go 1.26.4
+go 1.27.1
 
 require (
 	github.com/go-ruby-protobuf/protobuf v0.0.0-20260704100903-2defbe43d396 // indirect
