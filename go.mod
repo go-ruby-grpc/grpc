@@ -5,7 +5,7 @@ go 1.27.1
 require (
 	github.com/go-ruby-protobuf/protobuf v0.0.0-20260704100903-2defbe43d396
 	google.golang.org/grpc v1.83.2
-	google.golang.org/protobuf v1.36.11
+	google.golang.org/protobuf v1.36.12
 )
 
 require (
