@@ -3,7 +3,7 @@ module github.com/go-ruby-grpc/grpc
 go 1.27.2
 
 require (
-	github.com/go-ruby-protobuf/protobuf v0.0.0-20260704100903-2defbe43d396
+	github.com/go-ruby-protobuf/protobuf v0.0.0-20261010113245-09d220ca96f5
 	google.golang.org/grpc v1.84.0
 	google.golang.org/protobuf v1.36.12
 )
